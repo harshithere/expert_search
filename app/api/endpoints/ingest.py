@@ -3,9 +3,11 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from app.services.embedding import embedCandidateData
 
 load_dotenv()
 router = APIRouter()
+embed_candidate_data = embedCandidateData()
 
 @router.post("/")
 def create_vector_db():
@@ -16,7 +18,6 @@ def create_vector_db():
 
 def get_db_connection():
     try:
-        print(os.getenv("DB_HOST"))
         conn = psycopg2.connect(
             host=os.getenv("DB_HOST"),
             port=os.getenv("DB_PORT"),
@@ -37,15 +38,17 @@ def check_connection():
         return {"status": "success", "message": "Connected to PostgreSQL!"}
     raise HTTPException(status_code=500, detail="Database connection failed")
 
-def get_candidate_profiles():
-    
-
-    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-    with conn.cursor() as cursor:
-        cursor.execute("SELECT * FROM candidate_profiles")
-        return cursor.fetchall()
-
-    return []    
+@router.post("/ingest")
+def ingest_data():
+    conn = get_db_connection()
+    if conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM candidates LIMIT 10")
+            data = cursor.fetchall()
+            print(data)
+            embed_candidate_data.embed_data(data)
+            return {"status": "success", "message": "Data ingested successfully!"}
+    raise HTTPException(status_code=500, detail="Database connection failed")
 
 if __name__ == "__main__":
-    check_connection()
+    ingest_data()
