@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.services.search import SearchVectorDb
+from app.models.search import SearchRequest
 from typing import Optional
 
 router = APIRouter()
@@ -15,4 +16,4 @@ def search_VB(query: str, conversation_id: Optional[str] = None):
     return {"query": query, "results": results}
 
 if __name__ == "__main__":
-    search_VB("Specialist specializing in linear algebra")
+    print(search_VB("Specialist specializing in linear algebra"))

@@ -1,11 +1,21 @@
+import os
 import chromadb
 from typing import Optional
 import weaviate
 from llama_index.core import VectorStoreIndex, StorageContext, Settings
 from llama_index.vector_stores.weaviate import WeaviateVectorStore
+from llama_index.retrievers.bm25 import BM25Retriever
+from llama_index.core.retrievers import QueryFusionRetriever
+from llama_index.core.query_engine import RetrieverQueryEngine
+
+from dotenv import load_dotenv
+
 
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.llms.openrouter import OpenRouter
+
+load_dotenv()
 
 class SearchVectorDb:
     def __init__(self, persist_directory: str = "./chroma_db"):
@@ -28,6 +38,15 @@ class SearchVectorDb:
         # Set this as the global embedding model for LlamaIndex
         Settings.embed_model = embed_model
 
+        llm = OpenRouter(
+            api_key=os.getenv("OPENROUTER_KEY"),
+            model="openai/gpt-4o", 
+            context_window=128000, # Match the model's capacity
+        )
+
+        # 2. Set it globally so your index uses it automatically
+        Settings.llm = llm
+
         # Load the index from the vector store
         self.index = VectorStoreIndex.from_vector_store(
             vector_store, 
@@ -40,13 +59,31 @@ class SearchVectorDb:
 
     def search(self, query: str, conversation_id: Optional[str] = ""):
         """Performs a similarity search in the specified collection."""
-        """query_engine = self.index.as_query_engine(
+        query_engine = self.index.as_query_engine(
             vector_store_query_mode="hybrid", 
             alpha=0.5
-        )"""
+        )
+        response = query_engine.query(query)
+        return response
+    
+    def search_RRF(self, query: str, conversation_id: Optional[str] = ""):
+        vector_retriever = self.index.as_retriever(similarity_top_k=5)
 
-        retriever = self.index.as_retriever(similarity_top_k=3)
-        nodes = retriever.retrieve(query)
-        print(nodes)
-        #response = query_engine.query(query)
-        return {}        
+        # BM25 requires the underlying nodes to calculate corpus statistics
+        bm25_retriever = BM25Retriever.from_defaults(
+            docstore=self.index.docstore, 
+            similarity_top_k=5
+        )
+
+        retriever = QueryFusionRetriever(
+            [vector_retriever, bm25_retriever],
+            similarity_top_k=5,
+            num_queries=1,  # Set to 1 to use only the original query (avoids extra LLM calls)
+            mode="reciprocal_rerank", # This enables RRF
+            use_async=True,
+        )
+
+        # 3. Create the Query Engine
+        query_engine = RetrieverQueryEngine.from_args(retriever)
+        response = query_engine.query(query)
+        return response

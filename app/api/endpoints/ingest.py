@@ -43,10 +43,13 @@ def ingest_data():
     conn = get_db_connection()
     if conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT first_name, last_name, gender, headline, years_of_experience FROM candidates LIMIT 10")
+            #cursor.execute("SELECT first_name, last_name, gender, headline, years_of_experience FROM candidates LIMIT 10")
+
+            cursor.execute("SELECT DISTINCT id FROM candidates LIMIT 10")
+
             data = cursor.fetchall()
             print(data)
-            embed_candidate_data.embed_data(data)
+            embed_candidate_data.embed_data(data, cursor)
             return {"status": "success", "message": "Data ingested successfully!"}
     raise HTTPException(status_code=500, detail="Database connection failed")
 

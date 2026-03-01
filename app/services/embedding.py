@@ -27,30 +27,43 @@ class embedCandidateData():
             index_name="JobDescriptions"
         )"""
 
-    def create_documents(self, data):
+    def create_documents(self, data, cursor):
         documents = []
         for row in data:
-            # 2. Map row columns to variables
-            first_name, last_name, gender, headline, YOE = row
-            
-            # 3. Create a Document
-            # We put the 'bio' as the main text to be embedded
+            cursor.execute("""SELECT c.first_name, c.last_name, c.gender, c.headline, c.years_of_experience, cities.name as city, countries.name as country 
+                FROM candidates as c 
+                JOIN cities ON cities.id = c.city_id 
+                join countries on cities.country_id = countries.id 
+                WHERE c.id = %s""", (row[0],))
+            first_name, last_name, gender, headline, YOE, city, country = cursor.fetchone()
+            candidate_text = "Headline: " + headline
+            candidate_name = first_name + " " + last_name
+
+            cursor.execute("SELECT job_title, start_date, is_current, description FROM work_experience WHERE candidate_id = %s", (row[0],))
+            work_experiences = cursor.fetchall()
+            for work_experience in work_experiences:
+                candidate_text += "\n" + "Work Experience: " +  work_experience[0] + " " + work_experience[3]
+
+            print("Creating VB embedding for " + candidate_name + "with info -->" + candidate_text)
+
+            # Create a Document
             doc = Document(
-                text=headline,
+                text=candidate_text,
                 metadata={
-                    "candidate_name": first_name + " " + last_name,
-                    "gender": gender,
+                    "candidate_name": candidate_name,
                     "experience": YOE,
+                    "city": city,
+                    "country": country
                 },
                 # Optional: control how metadata appears in the text for the LLM
                 excluded_llm_metadata_keys=["email"], 
-                excluded_embed_metadata_keys=["email"]
+                excluded_embed_metadata_keys=["experience"]
             )
             documents.append(doc)
         return documents
 
-    def embed_data(self, data):
-        documents = self.create_documents(data)
+    def embed_data(self, data, cursor):
+        documents = self.create_documents(data, cursor)
         index = VectorStoreIndex.from_documents(
             documents, 
             storage_context=self.storage_context,
