@@ -5,8 +5,9 @@ import weaviate
 from llama_index.core import VectorStoreIndex, StorageContext, Settings
 from llama_index.vector_stores.weaviate import WeaviateVectorStore
 from llama_index.retrievers.bm25 import BM25Retriever
-from llama_index.core.retrievers import QueryFusionRetriever
+from llama_index.core.retrievers import QueryFusionRetriever, RecursiveRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
+from llama_index.core.postprocessor import LLMRerank
 
 from dotenv import load_dotenv
 
@@ -53,10 +54,6 @@ class SearchVectorDb:
             embed_model=embed_model
         )
 
-    def get_collection(self, name: str):
-        """Retrieves or creates a collection by name."""
-        return self.client.get_or_create_collection(name=name)
-
     def search(self, query: str, conversation_id: Optional[str] = ""):
         """Performs a similarity search in the specified collection."""
         query_engine = self.index.as_query_engine(
@@ -83,7 +80,43 @@ class SearchVectorDb:
             use_async=True,
         )
 
-        # 3. Create the Query Engine
+        # 3. Rerank retrieved nodes using GPT-4o for contextual relevance
+        reranker = LLMRerank(choice_batch_size=10, top_n=5)
+
+        # 4. Create the Query Engine with reranking
+        query_engine = RetrieverQueryEngine.from_args(
+            retriever,
+            node_postprocessors=[reranker]
+        )
+        response = query_engine.query(query)
+        return response
+    
+    def search_recursive(self, query: str, conversation_id: Optional[str] = ""):
+
+        vector_retriever = self.index.as_retriever(similarity_top_k=5)
+
+        # BM25 requires the underlying nodes to calculate corpus statistics
+        bm25_retriever = BM25Retriever.from_defaults(
+            docstore=self.index.docstore, 
+            similarity_top_k=5
+        )
+
+        fusion_retriever = QueryFusionRetriever(
+            [vector_retriever, bm25_retriever],
+            similarity_top_k=5,
+            num_queries=1,  # Set to 1 to use only the original query (avoids extra LLM calls)
+            mode="reciprocal_rerank", # This enables RRF
+            use_async=True,
+        )
+
+        retriever = RecursiveRetriever(
+            "vector",
+            retriever_dict={"vector": fusion_retriever}, # Fusion is now our base
+            verbose=True
+        )
+
+        # 4. Final Query Engine
         query_engine = RetrieverQueryEngine.from_args(retriever)
         response = query_engine.query(query)
         return response
+

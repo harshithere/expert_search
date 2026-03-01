@@ -15,11 +15,20 @@ A service that allows users to search for subject-matter experts through API end
 ### Search
 - POST /api/search
 
-### Design Decisions
+## Design Decisions
 - Dividing ingest and search into seperate API routers for clarity
-- Vector DB decision:
+
+### Vector DB decision:
 -- Chroma selected because it is a lightweight that can be run locally from a single file. It still supports hybrid search which is necessary for this application. Pgvector could be a better DB for the storage but not used from sheer time POV
 -- Weavite also has a great hybrid search but I was facing some problem with the local deployment due to the python version used for the application
 - Embedding decisions
 -- All candidate work information (headline, past experiences) etc is embedded together to get better context on cross experiences. 
+
+- Retrievers
+-- QueryFusionRetriever is used to combine both vector search and keyword matching results (BM25)
+-- RecursiveRetriever is used as we are splitting parent candidate information into child nodes for better retrieval - 
+
 - UV would be a better package manager but sometimes takes longer to setup system with that so was avoided. Docker was not used because my 8GB RAM system gets overloaded given the other applications running
+
+## Future Steps
+- An agentic RAG system where the LLM decides whether to call the RAG or not with what parameters
